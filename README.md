@@ -1,14 +1,22 @@
 # Smart Traffic Management
 
-A production-oriented traffic analytics system with a React dashboard on the frontend and a modular Node.js backend that provides PostgreSQL-backed APIs, a simulation engine, Socket.io realtime events, Redis-ready caching, and Prisma ORM.
+Production-oriented traffic management and emergency response platform with:
 
-## Stack
+- React dashboard frontend
+- Node.js + Express backend
+- PostgreSQL + Prisma ORM
+- Socket.io realtime updates
+- TomTom traffic flow, incidents, and routing integration
+- Simulation fallback when a live API key is unavailable
 
-- Frontend: React + Vite + Tailwind CSS + Recharts + Framer Motion
-- Backend: Node.js + Express + Socket.io
-- Database: PostgreSQL + Prisma ORM
-- Cache: Redis with graceful fallback
-- Architecture: MVC + service layer + event bus
+## Core Capabilities
+
+- Live traffic monitoring via TomTom Traffic Flow API
+- Incident ingestion via TomTom Traffic Incidents API
+- Emergency vehicle dispatch and live route tracking
+- Green corridor signal override logic
+- Historical traffic analytics and wait-time reporting
+- Realtime socket events for traffic, emergency movement, and signal actions
 
 ## Project Structure
 
@@ -37,275 +45,133 @@ trafficmanag/
     components/
     data/
     hooks/
+    services/
     App.jsx
     index.css
     main.jsx
+  .env.example
   index.html
   package.json
 ```
 
-## What The Backend Provides
+## Backend Environment
 
-- `GET /api/traffic/summary`
-- `GET /api/traffic/trends`
-- `GET /api/traffic/wait-times`
-- Realtime Socket.io events:
-  - `traffic:update`
-  - `traffic:congestion`
-  - `traffic:waitTime`
-- Traffic simulation every few seconds with peak-hour behavior
-- AI-style optimization rule that reduces wait time when congestion exceeds `70%`
-- Optimization logs persisted to PostgreSQL
-- Redis summary caching with safe fallback when Redis is unavailable
-- Rate limiting, validation middleware, centralized error handling, and graceful shutdown
-
-## Step-By-Step Setup
-
-### 1. Frontend setup
-
-PowerShell on your machine blocks `npm`, so use `npm.cmd`.
-
-```powershell
-npm.cmd install
-```
-
-Start the frontend:
-
-```powershell
-npm.cmd run dev
-```
-
-The dashboard usually runs on `http://localhost:5173`.
-
-### 2. Backend setup
-
-Move into the backend folder and install server dependencies:
-
-```powershell
-cd backend
-npm.cmd install
-```
-
-Copy the environment template:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-### 3. Configure PostgreSQL
-
-Create a PostgreSQL database, then update `backend/.env`:
+Create `backend/.env` from `backend/.env.example`.
 
 ```env
+PORT=4000
+NODE_ENV=development
+CLIENT_URL=http://localhost:5173
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smart_traffic?schema=public
+REDIS_URL=
+LIVE_TRAFFIC_POLL_INTERVAL_MS=12000
+EMERGENCY_UPDATE_INTERVAL_MS=3000
+EMERGENCY_CONGESTION_THRESHOLD=70
+TOMTOM_API_KEY=your_tomtom_key
+TOMTOM_TRAFFIC_BASE_URL=https://api.tomtom.com
+TOMTOM_ROUTING_BASE_URL=https://api.tomtom.com
 ```
 
-### 4. Optional Redis
+## Frontend Environment
 
-If Redis is available locally, keep `REDIS_URL` set. If not, leave it blank and the backend will still run without cache.
+Create `.env` in the repo root if you want explicit URLs:
 
 ```env
-REDIS_URL=redis://localhost:6379
+VITE_API_URL=http://localhost:4000/api
+VITE_SOCKET_URL=http://localhost:4000
 ```
 
-### 5. Generate Prisma client and migrate
+## Setup
+
+### 1. Install frontend dependencies
 
 ```powershell
-cd backend
+cd C:\Users\Asus\OneDrive\Desktop\trafficmanag
+npm.cmd install
+```
+
+### 2. Install backend dependencies
+
+```powershell
+cd C:\Users\Asus\OneDrive\Desktop\trafficmanag\backend
+npm.cmd install
+```
+
+### 3. Prepare PostgreSQL
+
+Update `backend/.env` with your database credentials, then run:
+
+```powershell
+cd C:\Users\Asus\OneDrive\Desktop\trafficmanag\backend
 npm.cmd run prisma:generate
 npm.cmd run prisma:migrate
 npm.cmd run prisma:seed
 ```
 
-### 6. Start the backend
+### 4. Start backend
 
 ```powershell
-cd backend
+cd C:\Users\Asus\OneDrive\Desktop\trafficmanag\backend
 npm.cmd run dev
 ```
 
-The API and Socket.io server run on `http://localhost:4000` by default.
+### 5. Start frontend
 
-### 7. Connect frontend to backend
-
-The frontend socket hook already defaults to `http://localhost:4000`. If you want to override it, create a frontend `.env` file:
-
-```env
-VITE_SOCKET_URL=http://localhost:4000
+```powershell
+cd C:\Users\Asus\OneDrive\Desktop\trafficmanag
+npm.cmd run dev
 ```
 
-## Prisma Data Model
+## Important Endpoints
 
-The Prisma schema is defined in [backend/prisma/schema.prisma](/workspace/backend/prisma/schema.prisma) and includes:
+### Traffic
 
-- `Intersection`
-  - `id`
-  - `name`
-  - `location`
-  - `status`
-- `TrafficLog`
-  - `id`
-  - `intersectionId`
-  - `vehicleCount`
-  - `congestionLevel`
-  - `avgWaitTime`
-  - `timestamp`
-- `OptimizationLog`
-  - stores AI-style optimization actions for congested intersections
+- `GET /api/traffic/summary`
+- `GET /api/traffic/trends`
+- `GET /api/traffic/wait-times`
+- `GET /api/traffic/live`
+- `GET /api/traffic/incidents`
 
-Indexes are included for:
+### Emergency
 
-- `Intersection.status`
-- `TrafficLog.intersectionId + timestamp`
-- `TrafficLog.timestamp`
-- `TrafficLog.congestionLevel + timestamp`
-- `OptimizationLog.intersectionId + timestamp`
+- `POST /api/emergency/start`
+- `GET /api/emergency/active`
+- `GET /api/emergency/history`
 
-## API Endpoints
-
-### `GET /api/traffic/summary`
-
-Optional query params:
-
-- `from`
-- `to`
-
-Example response:
+## Example Emergency Request
 
 ```json
+POST /api/emergency/start
 {
-  "success": true,
-  "data": {
-    "range": {
-      "from": "2026-03-26T00:00:00.000Z",
-      "to": "2026-03-26T12:30:00.000Z"
-    },
-    "totals": {
-      "vehicles": 38150,
-      "avgWaitTime": 58.14,
-      "avgCongestionLevel": 46.72,
-      "activeIntersections": 42,
-      "optimizationCount": 19
-    },
-    "latestSnapshot": {
-      "intersectionId": 2,
-      "intersectionName": "Airport Link / Terminal Road",
-      "vehicleCount": 941,
-      "congestionLevel": 77.4,
-      "avgWaitTime": 53,
-      "timestamp": "2026-03-26T12:29:56.000Z"
-    }
-  }
-}
-```
-
-### `GET /api/traffic/trends`
-
-Optional query params:
-
-- `from`
-- `to`
-- `intersectionId`
-- `interval=hour|day`
-
-Example response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "interval": "hour",
-    "series": [
-      {
-        "timestamp": "2026-03-26T08:00:00.000Z",
-        "vehicleCount": 5120,
-        "congestionLevel": 63.4
-      }
-    ]
-  }
-}
-```
-
-### `GET /api/traffic/wait-times`
-
-Optional query params:
-
-- `from`
-- `to`
-- `intersectionId`
-- `limit`
-
-Example response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "series": [
-      {
-        "timestamp": "2026-03-26T08:00:00.000Z",
-        "avgWaitTime": 61.3
-      }
-    ],
-    "latestByIntersection": [
-      {
-        "intersectionId": 2,
-        "name": "Airport Link / Terminal Road",
-        "avgWaitTime": 53,
-        "congestionLevel": 77.4,
-        "timestamp": "2026-03-26T12:29:56.000Z"
-      }
-    ]
-  }
+  "type": "AMBULANCE",
+  "currentLocation": {
+    "lat": 28.6139,
+    "lng": 77.209,
+    "label": "Delhi Gate"
+  },
+  "destination": {
+    "lat": 28.5672,
+    "lng": 77.2100,
+    "label": "AIIMS Trauma Center"
+  },
+  "speed": 18
 }
 ```
 
 ## Realtime Events
 
-The Socket.io server emits every simulation cycle:
-
 - `traffic:update`
-  - full intersection snapshot
 - `traffic:congestion`
-  - emitted when congestion exceeds `70%`
 - `traffic:waitTime`
-  - wait-time specific payload for dashboard widgets
+- `emergency:update`
+- `signal:override`
 
-The backend uses an internal event bus in `backend/src/events/trafficEventBus.js`, so the simulator does not emit directly to sockets.
+## Frontend Example
 
-## Frontend Realtime Hook
+Use [useEmergencyTrafficFeed.js](C:/Users/Asus/OneDrive/Desktop/trafficmanag/src/hooks/useEmergencyTrafficFeed.js) for a React-side live feed example, and [EmergencyRealtimePanel.jsx](C:/Users/Asus/OneDrive/Desktop/trafficmanag/src/components/EmergencyRealtimePanel.jsx) as a simple dashboard panel example.
 
-The sample client hook is in [src/hooks/useTrafficSocket.js](/workspace/src/hooks/useTrafficSocket.js). It:
+## Notes
 
-- connects to the Socket.io backend
-- tracks connection state
-- stores the latest traffic snapshot
-- keeps recent congestion alerts
-- keeps recent wait-time updates by intersection
-
-## Backend Notes
-
-- The simulator writes traffic logs every `SIMULATION_INTERVAL_MS`
-- Peak traffic is emphasized around `8-10 AM` and `6-9 PM`
-- Night traffic is reduced automatically
-- When congestion is above `70%`, wait time is reduced and an optimization log is stored
-- Redis caching is applied to summary responses to reduce repeated aggregate queries
-
-## Useful Commands
-
-Frontend:
-
-```powershell
-npm.cmd run dev
-npm.cmd run build
-```
-
-Backend:
-
-```powershell
-cd backend
-npm.cmd run dev
-npm.cmd run prisma:generate
-npm.cmd run prisma:migrate
-npm.cmd run prisma:seed
-```
+- If `TOMTOM_API_KEY` is configured, the backend uses live TomTom traffic flow, incidents, and routing.
+- If no TomTom key is configured, the system falls back to realistic simulation for traffic and emergency movement.
+- Redis is optional. If `REDIS_URL` is blank, the backend runs without cache.

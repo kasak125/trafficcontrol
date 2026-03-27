@@ -7,7 +7,13 @@ import {
 import { prisma } from "../config/prisma.js";
 import { optimizeTrafficLog } from "./optimizationService.js";
 
-export async function recordTrafficSnapshot({ intersection, metrics, timestamp = new Date() }) {
+export async function recordTrafficSnapshot({
+  intersection,
+  metrics,
+  timestamp = new Date(),
+  source = "simulated",
+  meta = null,
+}) {
   const trafficLog = await prisma.trafficLog.create({
     data: {
       intersectionId: intersection.id,
@@ -15,6 +21,8 @@ export async function recordTrafficSnapshot({ intersection, metrics, timestamp =
       congestionLevel: metrics.congestionLevel,
       avgWaitTime: metrics.avgWaitTime,
       timestamp,
+      source,
+      meta,
     },
   });
 
@@ -29,6 +37,8 @@ export async function recordTrafficSnapshot({ intersection, metrics, timestamp =
     avgWaitTime: optimization.optimizedWaitTime,
     optimized: optimization.optimized,
     optimizationAction: optimization.action ?? null,
+    source,
+    meta,
     timestamp,
   };
 

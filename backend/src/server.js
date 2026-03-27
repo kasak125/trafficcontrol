@@ -5,18 +5,20 @@ import { logger } from "./config/logger.js";
 import { prisma } from "./config/prisma.js";
 import { connectRedis, disconnectRedis } from "./config/redis.js";
 import { registerTrafficSocketServer } from "./sockets/registerTrafficSocketServer.js";
-import { TrafficSimulationService } from "./services/trafficSimulationService.js";
+import { TrafficMonitoringService } from "./services/trafficMonitoringService.js";
+import { emergencyVehicleService } from "./services/emergencyVehicleService.js";
 
 const httpServer = http.createServer(app);
 const { io, dispose } = registerTrafficSocketServer(httpServer);
-const simulator = new TrafficSimulationService({
-  intervalMs: env.simulationIntervalMs,
+const trafficMonitoringService = new TrafficMonitoringService({
+  intervalMs: env.liveTrafficPollIntervalMs,
 });
 
 async function startServer() {
   await prisma.$connect();
   await connectRedis();
-  await simulator.start();
+  await trafficMonitoringService.start();
+  await emergencyVehicleService.start();
 
   httpServer.listen(env.port, () => {
     logger.info("Smart Traffic backend is running", {
@@ -28,7 +30,8 @@ async function startServer() {
 
 async function shutdown(signal) {
   logger.info(`Received ${signal}. Starting graceful shutdown.`);
-  simulator.stop();
+  trafficMonitoringService.stop();
+  emergencyVehicleService.stop();
   dispose();
   io.close();
 

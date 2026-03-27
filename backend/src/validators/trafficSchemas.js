@@ -51,3 +51,11 @@ export const waitTimesQuerySchema = z.object({
     })
   ),
 });
+
+export const liveTrafficQuerySchema = z.object({
+  query: z.object({}),
+});
+
+export const trafficIncidentsQuerySchema = z.object({
+  query: z.object({}),
+});

@@ -20,15 +20,34 @@ enum OptimizationStatus {
   REVERTED
 }
 
+enum EmergencyVehicleType {
+  AMBULANCE
+  POLICE
+  FIRE
+}
+
+enum EmergencyStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum SignalActionType {
+  GREEN_CORRIDOR
+  CLEAR_APPROACH
+  RESTORE_DEFAULT
+}
+
 model Intersection {
-  id               Int                @id @default(autoincrement())
-  name             String             @unique
-  location         Json
-  status           IntersectionStatus @default(OPERATIONAL)
-  trafficLogs      TrafficLog[]
-  optimizationLogs OptimizationLog[]
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  id                Int                @id @default(autoincrement())
+  name              String             @unique
+  location          Json
+  status            IntersectionStatus @default(OPERATIONAL)
+  trafficLogs       TrafficLog[]
+  optimizationLogs  OptimizationLog[]
+  signalControlLogs SignalControlLog[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@index([status])
 }
@@ -40,6 +59,8 @@ model TrafficLog {
   congestionLevel Float
   avgWaitTime     Int
   timestamp       DateTime         @default(now())
+  source          String           @default("simulated")
+  meta            Json?
   intersection    Intersection     @relation(fields: [intersectionId], references: [id], onDelete: Cascade)
   optimization    OptimizationLog?
 
@@ -63,4 +84,44 @@ model OptimizationLog {
 
   @@index([intersectionId, timestamp])
   @@index([timestamp])
+}
+
+model EmergencyVehicle {
+  id                String               @id @default(cuid())
+  type              EmergencyVehicleType
+  currentLocation   Json
+  destination       Json
+  status            EmergencyStatus      @default(ACTIVE)
+  speed             Float                @default(0)
+  eta               Int
+  routeGeometry     Json
+  routeSummary      Json?
+  progress          Float                @default(0)
+  lastTrafficSource String               @default("simulation")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  completedAt       DateTime?
+  signalControlLogs SignalControlLog[]
+
+  @@index([status, createdAt])
+  @@index([type, status])
+}
+
+model SignalControlLog {
+  id                 Int              @id @default(autoincrement())
+  intersectionId     Int
+  emergencyVehicleId String?
+  action             SignalActionType
+  waitTimeOverride   Int?
+  reason             String
+  congestionLevel    Float?
+  expiresAt          DateTime?
+  createdAt          DateTime         @default(now())
+  metadata           Json?
+  intersection       Intersection     @relation(fields: [intersectionId], references: [id], onDelete: Cascade)
+  emergencyVehicle   EmergencyVehicle? @relation(fields: [emergencyVehicleId], references: [id], onDelete: SetNull)
+
+  @@index([intersectionId, createdAt])
+  @@index([emergencyVehicleId, createdAt])
+  @@index([action, createdAt])
 }
