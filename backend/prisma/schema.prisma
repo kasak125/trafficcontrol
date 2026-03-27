@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum IntersectionStatus {
+  OPERATIONAL
+  OPTIMIZED
+  DEGRADED
+  MAINTENANCE
+  OFFLINE
+}
+
+enum OptimizationStatus {
+  APPLIED
+  REVERTED
+}
+
+model Intersection {
+  id               Int                @id @default(autoincrement())
+  name             String             @unique
+  location         Json
+  status           IntersectionStatus @default(OPERATIONAL)
+  trafficLogs      TrafficLog[]
+  optimizationLogs OptimizationLog[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([status])
+}
+
+model TrafficLog {
+  id              Int              @id @default(autoincrement())
+  intersectionId  Int
+  vehicleCount    Int
+  congestionLevel Float
+  avgWaitTime     Int
+  timestamp       DateTime         @default(now())
+  intersection    Intersection     @relation(fields: [intersectionId], references: [id], onDelete: Cascade)
+  optimization    OptimizationLog?
+
+  @@index([intersectionId, timestamp])
+  @@index([timestamp])
+  @@index([congestionLevel, timestamp])
+}
+
+model OptimizationLog {
+  id                Int                @id @default(autoincrement())
+  intersectionId    Int
+  trafficLogId      Int?               @unique
+  action            String
+  previousWaitTime  Int
+  optimizedWaitTime Int
+  congestionLevel   Float
+  status            OptimizationStatus @default(APPLIED)
+  timestamp         DateTime           @default(now())
+  intersection      Intersection       @relation(fields: [intersectionId], references: [id], onDelete: Cascade)
+  trafficLog        TrafficLog?        @relation(fields: [trafficLogId], references: [id], onDelete: SetNull)
+
+  @@index([intersectionId, timestamp])
+  @@index([timestamp])
+}
