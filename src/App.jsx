@@ -23,10 +23,19 @@ import { motion } from "framer-motion";
 import Navbar from "./components/Navbar";
 import KpiCard from "./components/KpiCard";
 import ChartCard from "./components/ChartCard";
+import EmergencyRealtimePanel from "./components/EmergencyRealtimePanel";
+import AiDecisionPanel from "./components/AiDecisionPanel";
+import ParkingAvailabilityPanel from "./components/ParkingAvailabilityPanel";
 import LoadingSkeleton from "./components/LoadingSkeleton";
 import { analyticsByRange, navigationItems, rangeOptions } from "./data/analytics";
 import { useTrafficSocket } from "./hooks/useTrafficSocket";
-import { fetchDashboardData } from "./services/trafficApi";
+import {
+  fetchDashboardData,
+  fetchAiDecisions,
+  fetchParkingAvailability,
+  fetchLiveTrafficOverview,
+  fetchTrafficIncidents,
+} from "./services/trafficApi";
 
 const kpiIcons = [Car, Gauge, Sparkles, Network];
 
@@ -61,6 +70,13 @@ function App() {
   const [dashboardData, setDashboardData] = useState(() => buildFallbackDashboard("7d"));
   const [dashboardError, setDashboardError] = useState("");
   const [isApiConnected, setIsApiConnected] = useState(false);
+  const [liveTraffic, setLiveTraffic] = useState(null);
+  const [trafficIncidents, setTrafficIncidents] = useState([]);
+  const [liveError, setLiveError] = useState("");
+  const [aiDecisionData, setAiDecisionData] = useState(null);
+  const [aiDecisionError, setAiDecisionError] = useState("");
+  const [parkingData, setParkingData] = useState(null);
+  const [parkingError, setParkingError] = useState("");
   const realtimeState = useTrafficSocket();
 
   useEffect(() => {
@@ -115,6 +131,52 @@ function App() {
     };
   }, [selectedRange]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLiveOperations() {
+      try {
+        const [overview, incidents, aiDecisions, parkingAvailability] = await Promise.all([
+          fetchLiveTrafficOverview(),
+          fetchTrafficIncidents(),
+          fetchAiDecisions(),
+          fetchParkingAvailability(),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setLiveTraffic(overview);
+        setTrafficIncidents(incidents.incidents ?? []);
+        setAiDecisionData(aiDecisions);
+        setParkingData(parkingAvailability);
+        setLiveError("");
+        setAiDecisionError("");
+        setParkingError("");
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const message = error.message || "Unable to fetch live operations state.";
+        setLiveError(message);
+        setAiDecisionError(message);
+        setParkingError(message);
+      }
+    }
+
+    void loadLiveOperations();
+    const intervalId = window.setInterval(() => {
+      void loadLiveOperations();
+    }, 10000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const handleRangeChange = (event) => {
     const nextRange = event.target.value;
     startTransition(() => {
@@ -133,6 +195,20 @@ function App() {
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  const liveIntersection =
+    realtimeState.latestUpdate ?? liveTraffic?.intersections?.[0] ?? null;
+  const liveStatusTitle = realtimeState.connected
+    ? "Connected to live traffic feed"
+    : liveTraffic
+      ? "Live REST traffic active"
+      : isApiConnected
+        ? "REST analytics active"
+        : "Mock mode active";
+  const activeIncidents =
+    trafficIncidents.length > 0
+      ? trafficIncidents.slice(0, 5)
+      : realtimeState.congestionAlerts;
 
   return (
     <div className="min-h-screen bg-grid bg-[length:18px_18px]">
@@ -226,21 +302,17 @@ function App() {
                       Realtime stream
                     </p>
                     <h3 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">
-                      {realtimeState.connected
-                        ? "Connected to live traffic feed"
-                        : isApiConnected
-                          ? "REST analytics active"
-                          : "Mock mode active"}
+                      {liveStatusTitle}
                     </h3>
                   </div>
                   <span
                     className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${
-                      realtimeState.connected
+                      realtimeState.connected || liveTraffic
                         ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
                         : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                     }`}
                   >
-                    {realtimeState.connected ? "Live updates" : "Socket offline"}
+                    {realtimeState.connected ? "Live socket" : liveTraffic ? "Live REST" : "Offline"}
                   </span>
                 </div>
 
@@ -250,30 +322,41 @@ function App() {
                   </p>
                 ) : null}
 
+                {!liveTraffic && liveError ? (
+                  <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
+                    Live API status: {liveError}
+                  </p>
+                ) : null}
+
                 <div className="mt-5 grid gap-4 md:grid-cols-3">
                   <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/60">
                     <p className="text-sm text-slate-500 dark:text-slate-400">Latest intersection</p>
                     <p className="mt-2 font-semibold text-slate-900 dark:text-white">
-                      {realtimeState.latestUpdate?.intersectionName || "Waiting for stream"}
+                      {liveIntersection?.intersectionName || "Waiting for stream"}
                     </p>
                   </div>
                   <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/60">
                     <p className="text-sm text-slate-500 dark:text-slate-400">Live congestion</p>
                     <p className="mt-2 font-semibold text-slate-900 dark:text-white">
-                      {realtimeState.latestUpdate
-                        ? `${realtimeState.latestUpdate.congestionLevel}%`
-                        : "No live reading"}
+                      {liveIntersection ? `${liveIntersection.congestionLevel}%` : "No live reading"}
                     </p>
                   </div>
                   <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/60">
                     <p className="text-sm text-slate-500 dark:text-slate-400">Optimized wait</p>
                     <p className="mt-2 font-semibold text-slate-900 dark:text-white">
-                      {realtimeState.latestUpdate
-                        ? `${realtimeState.latestUpdate.avgWaitTime}s`
-                        : "No live reading"}
+                      {liveIntersection ? `${liveIntersection.avgWaitTime}s` : "No live reading"}
                     </p>
                   </div>
                 </div>
+
+                {liveTraffic?.source ? (
+                  <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+                    Source: {liveTraffic.source} | Updated:{" "}
+                    {liveTraffic.lastUpdated
+                      ? new Date(liveTraffic.lastUpdated).toLocaleTimeString()
+                      : "--"}
+                  </p>
+                ) : null}
               </motion.article>
 
               <motion.article
@@ -283,30 +366,30 @@ function App() {
                 className="glass-panel p-5"
               >
                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Recent congestion alerts
+                  Recent incidents
                 </p>
                 <div className="mt-4 space-y-3">
-                  {(realtimeState.congestionAlerts.length
-                    ? realtimeState.congestionAlerts
+                  {(activeIncidents.length
+                    ? activeIncidents
                     : [
                         {
-                          intersectionName: "No active alerts",
-                          congestionLevel: "--",
-                          timestamp: new Date().toISOString(),
+                          description: "No active incidents",
+                          from: "Delhi network",
+                          magnitudeOfDelay: "--",
+                          startTime: new Date().toISOString(),
                         },
                       ]
-                  ).map((alert) => (
+                  ).map((incident) => (
                     <div
-                      key={`${alert.intersectionName}-${alert.timestamp}`}
+                      key={`${incident.id || incident.intersectionName}-${incident.startTime || incident.timestamp}`}
                       className="rounded-2xl border border-slate-200/80 p-3 dark:border-slate-800"
                     >
                       <p className="font-medium text-slate-900 dark:text-white">
-                        {alert.intersectionName}
+                        {incident.description || incident.intersectionName}
                       </p>
                       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        Congestion: {alert.congestionLevel}
-                        {alert.congestionLevel !== "--" ? "%" : ""} •{" "}
-                        {new Date(alert.timestamp).toLocaleTimeString()}
+                        {incident.from || incident.intersectionName || "Traffic network"} | Delay:{" "}
+                        {incident.magnitudeOfDelay ?? incident.congestionLevel}
                       </p>
                     </div>
                   ))}
@@ -334,13 +417,20 @@ function App() {
                       <p className="font-medium text-slate-900 dark:text-white">{item.name}</p>
                       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                         Wait: {item.avgWaitTime}
-                        {item.avgWaitTime !== "--" ? "s" : ""} • Congestion: {item.congestionLevel}
+                        {item.avgWaitTime !== "--" ? "s" : ""} - Congestion: {item.congestionLevel}
                         {item.congestionLevel !== "--" ? "%" : ""}
                       </p>
                     </div>
                   ))}
                 </div>
               </motion.article>
+            </section>
+
+            <EmergencyRealtimePanel />
+
+            <section className="grid gap-5 xl:grid-cols-2">
+              <AiDecisionPanel data={aiDecisionData} error={aiDecisionError} />
+              <ParkingAvailabilityPanel data={parkingData} error={parkingError} />
             </section>
 
             <section className="grid gap-5 xl:grid-cols-2">

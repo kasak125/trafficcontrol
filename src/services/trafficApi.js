@@ -120,6 +120,47 @@ async function request(path, params) {
   return payload.data;
 }
 
+export async function fetchLiveTrafficOverview() {
+  return request("/traffic/live");
+}
+
+export async function fetchTrafficIncidents() {
+  return request("/traffic/incidents");
+}
+
+export async function fetchActiveEmergencies() {
+  return request("/emergency/active");
+}
+
+export async function fetchEmergencyHistory(limit = 5) {
+  return request("/emergency/history", { limit });
+}
+
+export async function fetchAiDecisions() {
+  return request("/ai/decisions");
+}
+
+export async function fetchParkingAvailability() {
+  return request("/parking/availability");
+}
+
+export async function startEmergency(payload) {
+  const response = await fetch(`${API_BASE_URL}/emergency/start`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error?.message || "Unable to start emergency response.");
+  }
+
+  return data.data;
+}
+
 export async function fetchDashboardData(rangeKey) {
   const config = rangeConfig[rangeKey] || rangeConfig["7d"];
   const now = new Date();
