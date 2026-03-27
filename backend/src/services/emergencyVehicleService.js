@@ -19,18 +19,23 @@ import {
 import { applyGreenCorridor } from "./greenCorridorService.js";
 
 function buildFallbackRoute(origin, destination) {
-  const steps = 18;
+  const intermediatePoints = 8;
+  const steps = intermediatePoints + 1;
   const points = Array.from({ length: steps + 1 }).map((_, index) => ({
     lat: origin.lat + ((destination.lat - origin.lat) * index) / steps,
     lng: origin.lng + ((destination.lng - origin.lng) * index) / steps,
   }));
   const distanceMeters = haversineDistanceMeters(origin, destination);
+  const averageSpeedMetersPerSecond = 11.11;
 
   return {
     points,
     summary: {
       lengthInMeters: Math.round(distanceMeters),
-      travelTimeInSeconds: Math.max(180, Math.round(distanceMeters / 11)),
+      travelTimeInSeconds: Math.max(
+        180,
+        Math.round(distanceMeters / averageSpeedMetersPerSecond),
+      ),
       trafficDelayInSeconds: Math.round(distanceMeters / 40),
     },
     raw: null,
@@ -56,11 +61,19 @@ function buildEmergencyPayload(vehicle) {
 
 async function getRouteForEmergency(origin, destination) {
   if (tomTomTrafficService.isConfigured()) {
-    const route = await tomTomTrafficService.calculateRoute({ origin, destination });
-    return {
-      ...route,
-      source: "tomtom",
-    };
+    const routeResult = await tomTomTrafficService.calculateRoute({ origin, destination });
+    if (routeResult.success) {
+      return {
+        ...routeResult.data,
+        source: "tomtom",
+      };
+    }
+
+    logger.warn("Fallback route generated for emergency", {
+      error: routeResult.error,
+      origin,
+      destination,
+    });
   }
 
   return buildFallbackRoute(origin, destination);

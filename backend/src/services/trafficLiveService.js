@@ -35,11 +35,11 @@ export async function getTrafficIncidents() {
 
   const intersections = await prisma.intersection.findMany();
   const bbox = buildBoundingBox(intersections.map((intersection) => decodeLocation(intersection.location)));
-  const incidents = await tomTomTrafficService.fetchIncidents(bbox);
+  const incidentResult = await tomTomTrafficService.fetchIncidents(bbox);
 
   return {
-    source: "tomtom",
+    source: incidentResult.success ? "tomtom" : "simulation",
     lastUpdated: new Date().toISOString(),
-    incidents,
+    incidents: incidentResult.success ? incidentResult.data : [],
   };
 }

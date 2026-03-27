@@ -8,34 +8,9 @@ import { clearByPrefix, SUMMARY_CACHE_PREFIX } from "./cacheService.js";
 import { buildBoundingBox, decodeLocation } from "../utils/geo.js";
 import { tomTomTrafficService } from "./tomTomTrafficService.js";
 import { setTrafficState } from "./trafficStateStore.js";
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function getTimeMultiplier(hour) {
-  if ((hour >= 8 && hour < 10) || (hour >= 18 && hour < 21)) {
-    return 1.9;
-  }
-
-  if ((hour >= 6 && hour < 8) || (hour >= 10 && hour < 12) || (hour >= 16 && hour < 18)) {
-    return 1.35;
-  }
-
-  if (hour >= 0 && hour < 5) {
-    return 0.45;
-  }
-
-  if (hour >= 22) {
-    return 0.6;
-  }
-
-  return 1;
-}
-
-function randomBetween(min, max) {
-  return Math.random() * (max - min) + min;
-}
+import { generateTraffic } from "./fallbackTrafficService.js";
+import { getParkingAvailability } from "./parkingAvailabilityService.js";
+import { PARKING_UPDATE_EVENT, trafficEventBus } from "../events/trafficEventBus.js";
 
 function getDefaultConfigForIntersection(intersection) {
   return (
@@ -45,34 +20,23 @@ function getDefaultConfigForIntersection(intersection) {
   );
 }
 
-function simulateMetrics(intersection, timestamp) {
-  const config = getDefaultConfigForIntersection(intersection);
-  const hour = timestamp.getHours();
-  const timeMultiplier = getTimeMultiplier(hour);
-  const volatilityMultiplier = 1 + randomBetween(-config.volatility, config.volatility);
-  const vehicleCount = Math.round(config.baseLoad * timeMultiplier * volatilityMultiplier);
-  const congestionLevel = clamp((vehicleCount / config.capacity) * 100 + randomBetween(-6, 8), 8, 99);
-  const avgWaitTime = Math.round(clamp(18 + congestionLevel * 0.9 + randomBetween(-4, 7), 12, 140));
-
-  return {
-    vehicleCount,
-    congestionLevel: Number(congestionLevel.toFixed(2)),
-    avgWaitTime,
-  };
-}
-
 function normalizeFlowToMetrics(intersection, liveFlow) {
   const config = getDefaultConfigForIntersection(intersection);
   const vehicleCount = Math.round(
-    clamp(config.baseLoad + (liveFlow.congestionLevel / 100) * config.capacity * 0.55, 120, config.capacity),
+    Math.min(
+      config.capacity,
+      Math.max(120, config.baseLoad + (liveFlow.congestionLevel / 100) * config.capacity * 0.55),
+    ),
   );
   const avgWaitTime = Math.round(
-    clamp(
+    Math.min(
+      160,
+      Math.max(
+        10,
       18 +
         liveFlow.congestionLevel * 0.85 +
-        Math.max(0, liveFlow.currentTravelTime - liveFlow.freeFlowTravelTime) * 0.25,
-      10,
-      160,
+          Math.max(0, liveFlow.currentTravelTime - liveFlow.freeFlowTravelTime) * 0.25,
+      ),
     ),
   );
 
@@ -185,32 +149,27 @@ export class TrafficMonitoringService {
     try {
       const timestamp = new Date();
       const intersections = await prisma.intersection.findMany();
-      const source = tomTomTrafficService.isConfigured() ? "tomtom" : "simulation";
-      const liveFlows =
-        source === "tomtom"
-          ? await tomTomTrafficService.fetchTrafficFlow(intersections)
-          : intersections.map((intersection) => ({
-              intersectionId: intersection.id,
-              intersectionName: intersection.name,
-              location: intersection.location,
-              currentSpeed: 0,
-              freeFlowSpeed: 0,
-              currentTravelTime: 0,
-              freeFlowTravelTime: 0,
-              roadClosure: false,
-              confidence: 0,
-              congestionLevel: simulateMetrics(intersection, timestamp).congestionLevel,
-              flowData: null,
-            }));
-
+      const shouldUseTomTom = tomTomTrafficService.isConfigured();
       const flowSnapshots = [];
+      const flowSources = new Set();
 
       for (const intersection of intersections) {
-        const liveFlow = liveFlows.find((item) => item.intersectionId === intersection.id);
-        const normalizedMetrics =
-          source === "tomtom"
-            ? normalizeFlowToMetrics(intersection, liveFlow)
-            : { ...simulateMetrics(intersection, timestamp), meta: { simulated: true } };
+        let liveFlow = null;
+        let source = "simulation";
+        let normalizedMetrics = generateTraffic(intersection, timestamp);
+
+        if (shouldUseTomTom) {
+          const flowResult = await tomTomTrafficService.fetchFlowForIntersection(intersection);
+          if (flowResult.success) {
+            liveFlow = flowResult.data;
+            normalizedMetrics = normalizeFlowToMetrics(intersection, liveFlow);
+            source = "tomtom";
+          } else {
+            logger.warn(`TomTom failed for intersection ${intersection.name}, using fallback`, {
+              error: flowResult.error,
+            });
+          }
+        }
 
         const snapshot = await recordTrafficSnapshot({
           intersection,
@@ -225,28 +184,46 @@ export class TrafficMonitoringService {
           snapshot,
           metrics: normalizedMetrics,
           liveFlow,
+          source,
         });
+        flowSources.add(source);
       }
 
       const bbox = buildBoundingBox(
         intersections.map((intersection) => decodeLocation(intersection.location)),
       );
-      const incidents =
-        source === "tomtom"
-          ? await tomTomTrafficService.fetchIncidents(bbox)
-          : simulateIncidents(flowSnapshots, timestamp);
+      let incidents = simulateIncidents(flowSnapshots, timestamp);
+      let stateSource =
+        flowSources.size > 1 ? "mixed" : flowSources.has("tomtom") ? "tomtom" : "simulation";
+
+      if (shouldUseTomTom) {
+        const incidentResult = await tomTomTrafficService.fetchIncidents(bbox);
+        if (incidentResult.success) {
+          incidents = incidentResult.data;
+        } else {
+          logger.warn("TomTom incidents request failed, using fallback incidents", {
+            error: incidentResult.error,
+          });
+          if (stateSource === "tomtom") {
+            stateSource = "mixed";
+          }
+        }
+      }
 
       setTrafficState({
-        source,
+        source: stateSource,
         lastUpdated: timestamp.toISOString(),
         flow: flowSnapshots.map((item) => ({
           ...item.snapshot,
+          source: item.source,
           currentSpeed: item.liveFlow?.currentSpeed ?? null,
           freeFlowSpeed: item.liveFlow?.freeFlowSpeed ?? null,
           roadClosure: item.liveFlow?.roadClosure ?? false,
         })),
         incidents,
       });
+      const parkingState = await getParkingAvailability();
+      trafficEventBus.emit(PARKING_UPDATE_EVENT, parkingState);
 
       await clearByPrefix(SUMMARY_CACHE_PREFIX);
     } catch (error) {

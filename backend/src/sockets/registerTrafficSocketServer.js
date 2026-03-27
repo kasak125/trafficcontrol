@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import {
   EMERGENCY_UPDATE_EVENT,
+  PARKING_UPDATE_EVENT,
   SIGNAL_OVERRIDE_EVENT,
   TRAFFIC_CONGESTION_EVENT,
   TRAFFIC_UPDATE_EVENT,
@@ -31,6 +32,7 @@ export function registerTrafficSocketServer(httpServer) {
         TRAFFIC_WAIT_TIME_EVENT,
         EMERGENCY_UPDATE_EVENT,
         SIGNAL_OVERRIDE_EVENT,
+        PARKING_UPDATE_EVENT,
       ],
     });
 
@@ -44,12 +46,14 @@ export function registerTrafficSocketServer(httpServer) {
   const forwardWaitTime = (payload) => io.emit(TRAFFIC_WAIT_TIME_EVENT, payload);
   const forwardEmergencyUpdate = (payload) => io.emit(EMERGENCY_UPDATE_EVENT, payload);
   const forwardSignalOverride = (payload) => io.emit(SIGNAL_OVERRIDE_EVENT, payload);
+  const forwardParkingUpdate = (payload) => io.emit(PARKING_UPDATE_EVENT, payload);
 
   trafficEventBus.on(TRAFFIC_UPDATE_EVENT, forwardUpdate);
   trafficEventBus.on(TRAFFIC_CONGESTION_EVENT, forwardCongestion);
   trafficEventBus.on(TRAFFIC_WAIT_TIME_EVENT, forwardWaitTime);
   trafficEventBus.on(EMERGENCY_UPDATE_EVENT, forwardEmergencyUpdate);
   trafficEventBus.on(SIGNAL_OVERRIDE_EVENT, forwardSignalOverride);
+  trafficEventBus.on(PARKING_UPDATE_EVENT, forwardParkingUpdate);
 
   return {
     io,
@@ -59,6 +63,7 @@ export function registerTrafficSocketServer(httpServer) {
       trafficEventBus.off(TRAFFIC_WAIT_TIME_EVENT, forwardWaitTime);
       trafficEventBus.off(EMERGENCY_UPDATE_EVENT, forwardEmergencyUpdate);
       trafficEventBus.off(SIGNAL_OVERRIDE_EVENT, forwardSignalOverride);
+      trafficEventBus.off(PARKING_UPDATE_EVENT, forwardParkingUpdate);
     },
   };
 }

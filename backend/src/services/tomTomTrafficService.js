@@ -1,14 +1,5 @@
 import { env } from "../config/env.js";
-import { AppError } from "../utils/AppError.js";
 import { pointToString } from "../utils/geo.js";
-
-function ensureHttpSuccess(response, message) {
-  if (response.ok) {
-    return;
-  }
-
-  throw new AppError(`${message}: ${response.status}`, 502, "UPSTREAM_API_ERROR");
-}
 
 function normalizeFlowResponse(intersection, payload) {
   const flow = payload.flowSegmentData;
@@ -54,7 +45,7 @@ function normalizeIncident(incident) {
 function extractRoutePoints(routePayload) {
   const route = routePayload.routes?.[0];
   if (!route) {
-    throw new AppError("TomTom route response did not include a route.", 502, "ROUTING_EMPTY");
+    return null;
   }
 
   const points =
@@ -79,72 +70,143 @@ export class TomTomTrafficService {
 
   async fetchFlowForIntersection(intersection) {
     if (!this.isConfigured()) {
-      throw new AppError("TomTom API key is not configured.", 400, "TOMTOM_NOT_CONFIGURED");
+      return {
+        success: false,
+        error: "TomTom API key is not configured.",
+      };
     }
 
-    const location = intersection.location;
-    const point = {
-      lat: Number(location.lat),
-      lng: Number(location.lng),
-    };
-    const url = new URL(`${env.tomTomTrafficBaseUrl}/traffic/services/4/flowSegmentData/absolute/10/json`);
-    url.searchParams.set("point", pointToString(point));
-    url.searchParams.set("key", env.tomTomApiKey);
+    try {
+      const location = intersection.location;
+      const point = {
+        lat: Number(location.lat),
+        lng: Number(location.lng),
+      };
+      const url = new URL(
+        `${env.tomTomTrafficBaseUrl}/traffic/services/4/flowSegmentData/absolute/10/json`,
+      );
+      url.searchParams.set("point", pointToString(point));
+      url.searchParams.set("key", env.tomTomApiKey);
 
-    const response = await fetch(url);
-    ensureHttpSuccess(response, "TomTom traffic flow request failed");
-    const payload = await response.json();
+      const response = await fetch(url);
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `TomTom traffic flow request failed: ${response.status}`,
+        };
+      }
 
-    return normalizeFlowResponse(intersection, payload);
+      const payload = await response.json();
+
+      return {
+        success: true,
+        data: normalizeFlowResponse(intersection, payload),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message || "TomTom traffic flow request failed.",
+      };
+    }
   }
 
   async fetchTrafficFlow(intersections) {
-    const results = await Promise.all(intersections.map((intersection) => this.fetchFlowForIntersection(intersection)));
+    const results = await Promise.all(
+      intersections.map((intersection) => this.fetchFlowForIntersection(intersection)),
+    );
     return results;
   }
 
   async fetchIncidents(bbox) {
     if (!this.isConfigured()) {
-      return [];
+      return {
+        success: false,
+        error: "TomTom API key is not configured.",
+      };
     }
 
-    const url = new URL(`${env.tomTomTrafficBaseUrl}/traffic/services/5/incidentDetails`);
-    url.searchParams.set("bbox", `${bbox.minLon},${bbox.minLat},${bbox.maxLon},${bbox.maxLat}`);
-    url.searchParams.set(
-      "fields",
-      "{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,startTime,endTime,from,to,events{description}}}}",
-    );
-    url.searchParams.set("language", "en-GB");
-    url.searchParams.set("timeValidityFilter", "present");
-    url.searchParams.set("key", env.tomTomApiKey);
+    try {
+      const url = new URL(`${env.tomTomTrafficBaseUrl}/traffic/services/5/incidentDetails`);
+      url.searchParams.set(
+        "bbox",
+        `${bbox.minLon},${bbox.minLat},${bbox.maxLon},${bbox.maxLat}`,
+      );
+      url.searchParams.set(
+        "fields",
+        "{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,startTime,endTime,from,to,events{description}}}}",
+      );
+      url.searchParams.set("language", "en-GB");
+      url.searchParams.set("timeValidityFilter", "present");
+      url.searchParams.set("key", env.tomTomApiKey);
 
-    const response = await fetch(url);
-    ensureHttpSuccess(response, "TomTom incident request failed");
-    const payload = await response.json();
+      const response = await fetch(url);
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `TomTom incident request failed: ${response.status}`,
+        };
+      }
 
-    return (payload.incidents ?? []).map(normalizeIncident);
+      const payload = await response.json();
+
+      return {
+        success: true,
+        data: (payload.incidents ?? []).map(normalizeIncident),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message || "TomTom incident request failed.",
+      };
+    }
   }
 
   async calculateRoute({ origin, destination }) {
     if (!this.isConfigured()) {
-      throw new AppError("TomTom API key is not configured.", 400, "TOMTOM_NOT_CONFIGURED");
+      return {
+        success: false,
+        error: "TomTom API key is not configured.",
+      };
     }
 
-    const routePath = `${pointToString(origin)}:${pointToString(destination)}`;
-    const url = new URL(
-      `${env.tomTomRoutingBaseUrl}/routing/1/calculateRoute/${routePath}/json`,
-    );
-    url.searchParams.set("traffic", "true");
-    url.searchParams.set("travelMode", "car");
-    url.searchParams.set("routeType", "fastest");
-    url.searchParams.set("computeTravelTimeFor", "all");
-    url.searchParams.set("key", env.tomTomApiKey);
+    try {
+      const routePath = `${pointToString(origin)}:${pointToString(destination)}`;
+      const url = new URL(
+        `${env.tomTomRoutingBaseUrl}/routing/1/calculateRoute/${routePath}/json`,
+      );
+      url.searchParams.set("traffic", "true");
+      url.searchParams.set("travelMode", "car");
+      url.searchParams.set("routeType", "fastest");
+      url.searchParams.set("computeTravelTimeFor", "all");
+      url.searchParams.set("key", env.tomTomApiKey);
 
-    const response = await fetch(url);
-    ensureHttpSuccess(response, "TomTom route calculation failed");
-    const payload = await response.json();
+      const response = await fetch(url);
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `TomTom route calculation failed: ${response.status}`,
+        };
+      }
 
-    return extractRoutePoints(payload);
+      const payload = await response.json();
+      const route = extractRoutePoints(payload);
+      if (!route) {
+        return {
+          success: false,
+          error: "TomTom route response did not include a route.",
+        };
+      }
+
+      return {
+        success: true,
+        data: route,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message || "TomTom route calculation failed.",
+      };
+    }
   }
 }
 
