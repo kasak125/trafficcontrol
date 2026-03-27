@@ -36,6 +36,7 @@ export async function recordTrafficSnapshot({
     congestionLevel: trafficLog.congestionLevel,
     avgWaitTime: optimization.optimizedWaitTime,
     optimized: optimization.optimized,
+    greenSignalDuration: optimization.greenSignalDuration ?? null,
     optimizationAction: optimization.action ?? null,
     source,
     meta,

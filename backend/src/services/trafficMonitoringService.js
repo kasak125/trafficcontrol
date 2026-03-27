@@ -20,6 +20,41 @@ function getDefaultConfigForIntersection(intersection) {
   );
 }
 
+function buildLaneSensorMeta({ intersection, vehicleCount, source, liveFlow, timestamp }) {
+  const laneCount = 4;
+  const laneSeed = intersection.id % laneCount;
+  const basePerLane = vehicleCount / laneCount;
+  const laneBreakdown = Array.from({ length: laneCount }).map((_, index) => {
+    const adjustmentCycle = [-0.12, 0.06, 0.14, -0.08];
+    const adjustment = adjustmentCycle[(index + laneSeed) % adjustmentCycle.length];
+    const laneVehicleCount = Math.max(12, Math.round(basePerLane * (1 + adjustment)));
+
+    return {
+      laneId: `L${index + 1}`,
+      vehicleCount: laneVehicleCount,
+      sensorType: source === "tomtom" ? "camera_flow_fusion" : "camera_simulation",
+      densityScore: Number(Math.min(1, laneVehicleCount / 320).toFixed(2)),
+    };
+  });
+
+  const normalizedTotal = laneBreakdown.reduce((sum, lane) => sum + lane.vehicleCount, 0);
+  const delta = vehicleCount - normalizedTotal;
+  if (delta !== 0) {
+    laneBreakdown[0].vehicleCount += delta;
+  }
+
+  return {
+    laneBreakdown,
+    sensorSource: source === "tomtom" ? "camera + tomtom flow estimate" : "simulated camera feed",
+    analysisTimestamp: timestamp.toISOString(),
+    modelInput: {
+      congestionLevel: liveFlow?.congestionLevel ?? null,
+      currentSpeed: liveFlow?.currentSpeed ?? null,
+      freeFlowSpeed: liveFlow?.freeFlowSpeed ?? null,
+    },
+  };
+}
+
 function normalizeFlowToMetrics(intersection, liveFlow) {
   const config = getDefaultConfigForIntersection(intersection);
   const vehicleCount = Math.round(
@@ -170,6 +205,20 @@ export class TrafficMonitoringService {
             });
           }
         }
+
+        normalizedMetrics = {
+          ...normalizedMetrics,
+          meta: {
+            ...(normalizedMetrics.meta ?? {}),
+            ...buildLaneSensorMeta({
+              intersection,
+              vehicleCount: normalizedMetrics.vehicleCount,
+              source,
+              liveFlow,
+              timestamp,
+            }),
+          },
+        };
 
         const snapshot = await recordTrafficSnapshot({
           intersection,

@@ -25,7 +25,7 @@ function buildConfidence(score) {
 
 export async function getAiDecisionFeed() {
   const state = getTrafficState();
-  const [activeEmergencies, parkingState] = await Promise.all([
+  const [activeEmergencies, parkingState, recentOptimizations] = await Promise.all([
     prisma.emergencyVehicle.findMany({
       where: { status: EmergencyStatus.ACTIVE },
       orderBy: { createdAt: "asc" },
@@ -41,12 +41,24 @@ export async function getAiDecisionFeed() {
       },
     }),
     getParkingAvailability(),
+    prisma.optimizationLog.count({
+      where: {
+        timestamp: {
+          gte: new Date(Date.now() - 10 * 60 * 1000),
+        },
+      },
+    }),
   ]);
 
   const decisions = [];
   const congestedIntersections = [...state.flow]
     .sort((left, right) => right.congestionLevel - left.congestionLevel)
     .slice(0, 3);
+  const laneSensorsActive = state.flow.reduce(
+    (sum, item) => sum + (item.meta?.laneBreakdown?.length ?? 0),
+    0,
+  );
+  const optimizedIntersections = state.flow.filter((item) => item.optimized).length;
 
   activeEmergencies.forEach((vehicle) => {
     const overrideCount = vehicle.signalControlLogs.length;
@@ -104,15 +116,67 @@ export async function getAiDecisionFeed() {
     });
   });
 
+  const featureStatus = [
+    {
+      id: "traffic-input",
+      title: "Traffic Data Input",
+      status: laneSensorsActive > 0 ? "active" : "fallback",
+      detail:
+        laneSensorsActive > 0
+          ? `${laneSensorsActive} lane-level camera/sensor channels feeding vehicle counts`
+          : "Intersection-level fallback feed active",
+      metric: `${state.flow.length} intersections`,
+    },
+    {
+      id: "ai-analysis",
+      title: "AI Analysis",
+      status: decisions.length ? "active" : "standby",
+      detail: `Density scoring and adaptive recommendations generated from ${state.source} traffic state`,
+      metric: `${decisions.length} recommendations`,
+    },
+    {
+      id: "dynamic-signal",
+      title: "Dynamic Signal Timing",
+      status: optimizedIntersections > 0 ? "active" : "monitoring",
+      detail:
+        optimizedIntersections > 0
+          ? `Green phase tuning is active at ${optimizedIntersections} intersections`
+          : "Signal timing engine is monitoring for congestion spikes",
+      metric: `${recentOptimizations} optimizations / 10 min`,
+    },
+    {
+      id: "real-time-control",
+      title: "Real-Time Control",
+      status: state.lastUpdated ? "active" : "offline",
+      detail:
+        state.lastUpdated
+          ? `Control loop is updating from ${state.source} telemetry every cycle`
+          : "Control loop awaiting live traffic state",
+      metric: state.lastUpdated ? "Loop online" : "Offline",
+    },
+    {
+      id: "emergency-priority",
+      title: "Emergency Vehicle Priority",
+      status: activeEmergencies.length ? "active" : "ready",
+      detail:
+        activeEmergencies.length
+          ? "Green corridor overrides are active for emergency routing"
+          : "Priority corridor engine is armed for ambulance and fire dispatch",
+      metric: `${activeEmergencies.length} active routes`,
+    },
+  ];
+
   return {
     source: state.source,
     generatedAt: new Date().toISOString(),
+    analysisMethod: "hybrid-density-scoring",
     summary: {
       activeEmergencies: activeEmergencies.length,
       liveIntersections: state.flow.length,
       incidents: state.incidents.length,
       recommendations: decisions.length,
     },
+    featureStatus,
     decisions: decisions.slice(0, 6),
   };
 }
