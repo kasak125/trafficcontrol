@@ -4,6 +4,7 @@ const trafficState = {
   flow: [],
   incidents: [],
   actions: [],
+  cvDensity: {},
 };
 
 export function setTrafficState(nextState) {
@@ -14,6 +15,9 @@ export function setTrafficState(nextState) {
   if (nextState.actions) {
     trafficState.actions = nextState.actions;
   }
+  if (nextState.cvDensity) {
+    trafficState.cvDensity = nextState.cvDensity;
+  }
 }
 
 export function getTrafficState() {
@@ -22,9 +26,21 @@ export function getTrafficState() {
     flow: [...trafficState.flow],
     incidents: [...trafficState.incidents],
     actions: [...trafficState.actions],
+    cvDensity: { ...trafficState.cvDensity },
   };
 }
 
 export function pushSystemAction(action) {
   trafficState.actions = [action, ...trafficState.actions].slice(0, 25);
+}
+
+export function upsertCvDensityState(reading) {
+  trafficState.cvDensity = {
+    ...trafficState.cvDensity,
+    [reading.direction]: reading,
+  };
+}
+
+export function getCvDensityState() {
+  return { ...trafficState.cvDensity };
 }

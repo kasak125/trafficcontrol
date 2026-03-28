@@ -100,6 +100,7 @@ export async function applyGreenCorridor({ emergencyVehicle, currentLocation, ro
       emergencyVehicleId: emergencyVehicle.id,
       intersectionId: candidate.intersection.id,
       intersectionName: candidate.intersection.name,
+      location: candidate.intersection.location,
       action: signalLog.action,
       reason,
       waitTimeOverride,

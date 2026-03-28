@@ -12,6 +12,7 @@ export async function getLiveTrafficOverview() {
     intersections: state.flow,
     incidentCount: state.incidents.length,
     recentActions: state.actions,
+    cvDensity: state.cvDensity,
   };
 }
 

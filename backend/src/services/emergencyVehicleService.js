@@ -53,7 +53,9 @@ function buildEmergencyPayload(vehicle) {
     speed: vehicle.speed,
     eta: vehicle.eta,
     progress: vehicle.progress,
+    routeGeometry: Array.isArray(vehicle.routeGeometry) ? vehicle.routeGeometry : [],
     routeSummary: vehicle.routeSummary,
+    routeSource: vehicle.lastTrafficSource,
     updatedAt: vehicle.updatedAt,
     completedAt: vehicle.completedAt,
   };
@@ -244,6 +246,7 @@ export class EmergencyVehicleService {
       recentOverrides: vehicle.signalControlLogs.map((log) => ({
         id: log.id,
         intersectionName: log.intersection.name,
+        location: log.intersection.location,
         action: log.action,
         reason: log.reason,
         createdAt: log.createdAt,

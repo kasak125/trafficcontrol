@@ -11,6 +11,7 @@ import { setTrafficState } from "./trafficStateStore.js";
 import { generateTraffic } from "./fallbackTrafficService.js";
 import { getParkingAvailability } from "./parkingAvailabilityService.js";
 import { PARKING_UPDATE_EVENT, trafficEventBus } from "../events/trafficEventBus.js";
+import { applyCvDensityOverride } from "./cvDensityService.js";
 
 function getDefaultConfigForIntersection(intersection) {
   return (
@@ -205,6 +206,13 @@ export class TrafficMonitoringService {
             });
           }
         }
+
+        normalizedMetrics = applyCvDensityOverride({
+          intersection,
+          intersections,
+          metrics: normalizedMetrics,
+          timestamp,
+        });
 
         normalizedMetrics = {
           ...normalizedMetrics,

@@ -2,6 +2,7 @@ import { Server } from "socket.io";
 import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import {
+  CV_DENSITY_EVENT,
   EMERGENCY_UPDATE_EVENT,
   PARKING_UPDATE_EVENT,
   SIGNAL_OVERRIDE_EVENT,
@@ -33,6 +34,7 @@ export function registerTrafficSocketServer(httpServer) {
         EMERGENCY_UPDATE_EVENT,
         SIGNAL_OVERRIDE_EVENT,
         PARKING_UPDATE_EVENT,
+        CV_DENSITY_EVENT,
       ],
     });
 
@@ -47,6 +49,7 @@ export function registerTrafficSocketServer(httpServer) {
   const forwardEmergencyUpdate = (payload) => io.emit(EMERGENCY_UPDATE_EVENT, payload);
   const forwardSignalOverride = (payload) => io.emit(SIGNAL_OVERRIDE_EVENT, payload);
   const forwardParkingUpdate = (payload) => io.emit(PARKING_UPDATE_EVENT, payload);
+  const forwardCvDensityUpdate = (payload) => io.emit(CV_DENSITY_EVENT, payload);
 
   trafficEventBus.on(TRAFFIC_UPDATE_EVENT, forwardUpdate);
   trafficEventBus.on(TRAFFIC_CONGESTION_EVENT, forwardCongestion);
@@ -54,6 +57,7 @@ export function registerTrafficSocketServer(httpServer) {
   trafficEventBus.on(EMERGENCY_UPDATE_EVENT, forwardEmergencyUpdate);
   trafficEventBus.on(SIGNAL_OVERRIDE_EVENT, forwardSignalOverride);
   trafficEventBus.on(PARKING_UPDATE_EVENT, forwardParkingUpdate);
+  trafficEventBus.on(CV_DENSITY_EVENT, forwardCvDensityUpdate);
 
   return {
     io,
@@ -64,6 +68,7 @@ export function registerTrafficSocketServer(httpServer) {
       trafficEventBus.off(EMERGENCY_UPDATE_EVENT, forwardEmergencyUpdate);
       trafficEventBus.off(SIGNAL_OVERRIDE_EVENT, forwardSignalOverride);
       trafficEventBus.off(PARKING_UPDATE_EVENT, forwardParkingUpdate);
+      trafficEventBus.off(CV_DENSITY_EVENT, forwardCvDensityUpdate);
     },
   };
 }
